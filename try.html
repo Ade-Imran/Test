@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Custom QR Code Scanner</title>
+  <style>
+    /* Personalized CSS styling */
+    body {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      text-align: center;
+      padding: 30px;
+      background-color: #e0f7fa; /* A light cyan background */
+      margin: 0;
+    }
+    header {
+      margin-bottom: 20px;
+    }
+    header h1 {
+      color: #006064;
+      margin: 0;
+      font-size: 2em;
+    }
+    #qr-reader {
+      width: 320px;
+      margin: 20px auto;
+      border: 4px solid #006064;
+      border-radius: 10px;
+      background: #ffffff;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    #qr-reader-results {
+      margin-top: 20px;
+      font-size: 1.2em;
+      color: #004d40;
+      font-weight: bold;
+    }
+    footer {
+      margin-top: 30px;
+      font-size: 0.9em;
+      color: #006064;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Welcome to My QR Scanner</h1>
+  </header>
+
+  <!-- This div will be used by the html5-qrcode library to render the scanner -->
+  <div id="qr-reader"></div>
+  
+  <!-- This div will display the scan results -->
+  <div id="qr-reader-results"></div>
+
+  <!-- Include the html5-qrcode library from a CDN -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <script>
+    // Callback function executed when a QR code is successfully scanned
+    function onScanSuccess(decodedText, decodedResult) {
+      // Display the decoded text in the results div
+      document.getElementById('qr-reader-results').innerText = 'QR Code detected: ' + decodedText;
+      console.log(`Decoded text: ${decodedText}`, decodedResult);
+      
+      // Optionally, stop the scanner after a successful scan:
+      // html5QrcodeScanner.clear().catch(error => console.error('Failed to clear QR code scanner.', error));
+    }
+
+    // Optional callback for handling scanning errors
+    function onScanError(errorMessage) {
+      // Called when no QR code is found in the frame
+      console.warn(`QR scan error: ${errorMessage}`);
+    }
+
+    // Initialize the scanner with personalized settings
+    var html5QrcodeScanner = new Html5QrcodeScanner(
+      "qr-reader", { fps: 10, qrbox: 250 }, /* verbose= */ false);
+    html5QrcodeScanner.render(onScanSuccess, onScanError);
+  </script>
+  
+  <footer>
+    Created by [Your Name] • 2025
+  </footer>
+</body>
+</html>

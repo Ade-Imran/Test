@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Food Collection System</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- Include the html5-qrcode library for user scanning -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <!-- Include QRCode.js library for generating QR codes -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Food Collection System</h1>
+  </header>
+
+  <!-- Dashboard Panel (Main Menu) -->
+  <div id="dashboard" class="panel">
+    <button onclick="navigateTo('admin-login')">Admin</button>
+    <button onclick="navigateTo('user-male-subcategories')">Male</button>
+    <button onclick="navigateTo('user-female-subcategories')">Female</button>
+    <button onclick="startUserScanner('guest')">Guest</button>
+    <button onclick="navigateTo('qr-generator')" id="qr-gen-btn">Generate QR Code</button>
+  </div>
+
+  <!-- Admin Login Panel -->
+  <div id="admin-login" class="panel hidden">
+    <h2>Admin Login</h2>
+    <input type="text" id="admin-username" placeholder="Username">
+    <input type="password" id="admin-password" placeholder="Password">
+    <button onclick="adminLogin()">Login</button>
+    <p id="login-error" class="error hidden">Invalid login!</p>
+    <button onclick="backToPrevious()">Back</button>
+  </div>
+
+  <!-- Admin Dashboard Panel (after login) -->
+  <div id="admin-dashboard" class="panel hidden">
+    <h2>Admin Dashboard</h2>
+    <h3>Select Category</h3>
+    <button onclick="selectAdminCategory('male')">Male</button>
+    <button onclick="selectAdminCategory('female')">Female</button>
+    <button onclick="setAdminCategory('guest')">Guest</button>
+    <br>
+    <!-- Global control for enabling/disabling QR Code Generation -->
+    <p>QR Code Generation: <span id="qr-gen-status"></span></p>
+    <button onclick="toggleQRGeneration()">Toggle QR Code Generation</button>
+    <br>
+    <!-- Statistics button now in admin dashboard -->
+    <button onclick="navigateTo('statistics'); showStatistics();">Statistics</button>
+    <br>
+    <button onclick="backToPrevious()">Back</button>
+  </div>
+
+  <!-- Admin Male Subcategories Panel -->
+  <div id="admin-male-subcategories" class="panel hidden">
+    <h3>Select Male Subcategory</h3>
+    <button onclick="setAdminCategory('male-atfal')">Atfal</button>
+    <button onclick="setAdminCategory('male-khuddam')">Khuddam</button>
+    <button onclick="setAdminCategory('male-ansarullah')">Ansarullah</button>
+    <br>
+    <button onclick="backToPrevious()">Back</button>
+  </div>
+
+  <!-- Admin Female Subcategories Panel -->
+  <div id="admin-female-subcategories" class="panel hidden">
+    <h3>Select Female Subcategory</h3>
+    <button onclick="setAdminCategory('female-nasirat')">Nasirat</button>
+    <button onclick="setAdminCategory('female-lajna')">Lajna</button>
+    <br>
+    <button onclick="backToPrevious()">Back</button>
+  </div>
+
+  <!-- Admin Settings Form (No QR Template input) -->
+  <div id="admin-settings-form" class="panel hidden">
+    <h3 id="selected-category-display"></h3>
+    <p class="info">(QR Code template configuration is removed.)</p>
+    <br>
+    <label>Start Time:</label>
+    <input type="datetime-local" id="start-time">
+    <br>
+    <label>End Time:</label>
+    <input type="datetime-local" id="end-time">
+    <br>
+    <!-- Default max claims now set to 1 -->
+    <input type="number" id="max-claims" placeholder="Max Claims Allowed" min="1" value="1">
+    <br>
+    <button onclick="saveSettings()">Save Settings</button>
+    <button onclick="deleteSettings()">Delete Settings</button>
+    <br>
+    <button onclick="backToPrevious()">Back</button>
+  </div>
+
+  <!-- User Male Subcategories Panel -->
+  <div id="user-male-subcategories" class="panel hidden">
+    <h3>Select Male Subcategory</h3>
+    <button onclick="startUserScannerForCategory('male-atfal')">Atfal</button>
+    <button onclick="startUserScannerForCategory('male-khuddam')">Khuddam</button>
+    <button onclick="startUserScannerForCategory('male-ansarullah')">Ansarullah</button>
+    <br>
+    <button onclick="backToPrevious()">Back</button>
+  </div>
+
+  <!-- User Female Subcategories Panel -->
+  <div id="user-female-subcategories" class="panel hidden">
+    <h3>Select Female Subcategory</h3>
+    <button onclick="startUserScannerForCategory('female-nasirat')">Nasirat</button>
+    <button onclick="startUserScannerForCategory('female-lajna')">Lajna</button>
+    <br>
+    <button onclick="backToPrevious()">Back</button>
+  </div>
+
+  <!-- Scanner Panel (for user scanning) -->
+  <div id="scanner" class="panel hidden">
+    <h2 id="scanner-title">Scan QR Code</h2>
+    <!-- QR scanner widget will render here -->
+    <div id="qr-reader"></div>
+    <!-- Display scan results -->
+    <div id="qr-reader-results"></div>
+    <!-- For users to claim food after validation -->
+    <button id="claim-btn" class="hidden" onclick="claimFood()">I Agree & Claim Food</button>
+    <button onclick="backToPrevious()">Back</button>
+    <button onclick="stopScanner()">Stop Scanner</button>
+  </div>
+
+  <!-- QR Code Generator Panel -->
+  <div id="qr-generator" class="panel hidden">
+    <h2>Generate QR Code</h2>
+    <label>Membership Number:</label>
+    <input type="text" id="membership-number" placeholder="Enter Membership Number">
+    <br>
+    <label>Name:</label>
+    <input type="text" id="member-name" placeholder="Enter Name">
+    <br>
+    <label>Category:</label>
+    <select id="member-category">
+      <option value="male-atfal">Male Atfal</option>
+      <option value="male-khuddam">Male Khuddam</option>
+      <option value="male-ansarullah">Male Ansarullah</option>
+      <option value="female-nasirat">Female Nasirat</option>
+      <option value="female-lajna">Female Lajna</option>
+      <option value="guest">Guest</option>
+    </select>
+    <br>
+    <label>Valid From:</label>
+    <input type="datetime-local" id="valid-from">
+    <br>
+    <label>Valid To:</label>
+    <input type="datetime-local" id="valid-to">
+    <br>
+    <button onclick="generateQRCode()">Generate QR Code</button>
+    <div id="qr-output"></div>
+    <br>
+    <button onclick="backToPrevious()">Back</button>
+  </div>
+
+  <!-- Statistics Panel (for admin) -->
+  <div id="statistics" class="panel hidden">
+    <h2>QR Code Statistics</h2>
+    <table id="stats-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Membership Number</th>
+          <th>Category</th>
+          <th>Claim Status</th>
+        </tr>
+      </thead>
+      <tbody>
+      </tbody>
+    </table>
+    <br>
+    <button onclick="backToPrevious()">Back</button>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

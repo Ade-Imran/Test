@@ -9,6 +9,8 @@
   <script src="https://unpkg.com/html5-qrcode"></script>
   <!-- Include QRCode.js library for generating QR codes -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- Include Chart.js for graphical statistics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <header>
@@ -42,14 +44,18 @@
     <button onclick="selectAdminCategory('female')">Female</button>
     <button onclick="setAdminCategory('guest')">Guest</button>
     <br>
-    <!-- Global control for enabling/disabling QR Code Generation -->
+    <!-- Global control for enabling/disabling QR Code Generation (affects main dashboard button only) -->
     <p>QR Code Generation: <span id="qr-gen-status"></span></p>
     <button onclick="toggleQRGeneration()">Toggle QR Code Generation</button>
     <br>
-    <!-- Statistics button now in admin dashboard -->
+    <!-- Statistics button in admin dashboard -->
     <button onclick="navigateTo('statistics'); showStatistics();">Statistics</button>
     <br>
-    <button onclick="backToPrevious()">Back</button>
+    <!-- New Generate QR Code button for admin (always enabled) -->
+    <button onclick="navigateTo('qr-generator')" id="admin-qr-gen-btn">Generate QR Code</button>
+    <br>
+    <!-- Dedicated Log Out button -->
+    <button onclick="logoutAdmin()">Log Out</button>
   </div>
 
   <!-- Admin Male Subcategories Panel -->
@@ -120,7 +126,6 @@
     <!-- For users to claim food after validation -->
     <button id="claim-btn" class="hidden" onclick="claimFood()">I Agree & Claim Food</button>
     <button onclick="backToPrevious()">Back</button>
-    <button onclick="stopScanner()">Stop Scanner</button>
   </div>
 
   <!-- QR Code Generator Panel -->
@@ -151,12 +156,24 @@
     <button onclick="generateQRCode()">Generate QR Code</button>
     <div id="qr-output"></div>
     <br>
+    <!-- Print button becomes visible after successful generation -->
+    <button id="print-btn" class="hidden" onclick="printQRCode()">Print QR Code</button>
+    <br>
     <button onclick="backToPrevious()">Back</button>
   </div>
 
   <!-- Statistics Panel (for admin) -->
   <div id="statistics" class="panel hidden">
     <h2>QR Code Statistics</h2>
+    <!-- Summary Section -->
+    <div id="stats-summary"></div>
+    <br>
+    <!-- Chart Canvas -->
+    <canvas id="chart-canvas" width="400" height="200"></canvas>
+    <br>
+    <!-- Search Box for filtering by name or membership number -->
+    <input type="text" id="stats-search" placeholder="Search by Membership Number or Name">
+    <br>
     <table id="stats-table">
       <thead>
         <tr>
@@ -164,6 +181,7 @@
           <th>Membership Number</th>
           <th>Category</th>
           <th>Claim Status</th>
+          <th>Action</th>
         </tr>
       </thead>
       <tbody>

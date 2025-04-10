@@ -5,23 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Food Collection System</title>
   <link rel="stylesheet" href="styles.css">
-  <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
-  <script>
-    // TODO: Replace the following with your app's Firebase project configuration
-    var firebaseConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-      databaseURL: "https://YOUR_PROJECT_ID.firebaseio.com",
-      projectId: "YOUR_PROJECT_ID",
-      storageBucket: "YOUR_PROJECT_ID.appspot.com",
-      messagingSenderId: "YOUR_SENDER_ID",
-      appId: "YOUR_APP_ID"
-    };
-    // Initialize Firebase
-    firebase.initializeApp(firebaseConfig);
-  </script>
   <!-- Include the html5-qrcode library for user scanning -->
   <script src="https://unpkg.com/html5-qrcode"></script>
   <!-- Include QRCode.js library for generating QR codes -->
@@ -61,16 +44,17 @@
     <button onclick="selectAdminCategory('female')">Female</button>
     <button onclick="setAdminCategory('guest')">Guest</button>
     <br>
-    <!-- Global control for enabling/disabling QR Code Generation -->
+    <!-- Global control for enabling/disabling QR Code Generation (affects main dashboard button only) -->
     <p>QR Code Generation: <span id="qr-gen-status"></span></p>
     <button onclick="toggleQRGeneration()">Toggle QR Code Generation</button>
     <br>
     <!-- Statistics button in admin dashboard -->
     <button onclick="navigateTo('statistics'); showStatistics();">Statistics</button>
     <br>
-    <!-- Generate QR Code button for admin -->
+    <!-- New Generate QR Code button for admin (always enabled) -->
     <button onclick="navigateTo('qr-generator')" id="admin-qr-gen-btn">Generate QR Code</button>
     <br>
+    <!-- Dedicated Log Out button -->
     <button onclick="logoutAdmin()">Log Out</button>
   </div>
 
@@ -93,7 +77,7 @@
     <button onclick="backToPrevious()">Back</button>
   </div>
 
-  <!-- Admin Settings Form -->
+  <!-- Admin Settings Form (No QR Template input) -->
   <div id="admin-settings-form" class="panel hidden">
     <h3 id="selected-category-display"></h3>
     <p class="info">(QR Code template configuration is removed.)</p>
@@ -104,6 +88,7 @@
     <label>End Time:</label>
     <input type="datetime-local" id="end-time">
     <br>
+    <!-- Default max claims now set to 1 -->
     <input type="number" id="max-claims" placeholder="Max Claims Allowed" min="1" value="1">
     <br>
     <button onclick="saveSettings()">Save Settings</button>
@@ -131,14 +116,16 @@
     <button onclick="backToPrevious()">Back</button>
   </div>
 
-  <!-- Scanner Panel -->
+  <!-- Scanner Panel (for user scanning) -->
   <div id="scanner" class="panel hidden">
     <h2 id="scanner-title">Scan QR Code</h2>
+    <!-- QR scanner widget will render here -->
     <div id="qr-reader"></div>
+    <!-- Display scan results -->
     <div id="qr-reader-results"></div>
+    <!-- For users to claim food after validation -->
     <button id="claim-btn" class="hidden" onclick="claimFood()">I Agree & Claim Food</button>
     <button onclick="backToPrevious()">Back</button>
-    <button onclick="stopScanner()">Stop Scanner</button>
   </div>
 
   <!-- QR Code Generator Panel -->
@@ -169,18 +156,22 @@
     <button onclick="generateQRCode()">Generate QR Code</button>
     <div id="qr-output"></div>
     <br>
+    <!-- Print button becomes visible after successful generation -->
     <button id="print-btn" class="hidden" onclick="printQRCode()">Print QR Code</button>
     <br>
     <button onclick="backToPrevious()">Back</button>
   </div>
 
-  <!-- Statistics Panel -->
+  <!-- Statistics Panel (for admin) -->
   <div id="statistics" class="panel hidden">
     <h2>QR Code Statistics</h2>
+    <!-- Summary Section -->
     <div id="stats-summary"></div>
     <br>
+    <!-- Chart Canvas -->
     <canvas id="chart-canvas" width="400" height="200"></canvas>
     <br>
+    <!-- Search Box for filtering by name or membership number -->
     <input type="text" id="stats-search" placeholder="Search by Membership Number or Name">
     <br>
     <table id="stats-table">

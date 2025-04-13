@@ -90,7 +90,6 @@ th, td {
   text-align: center;
 }
 
-/* Styles for claim boxes in the statistics table */
 .claim-box {
   display: inline-block;
   width: 20px;
@@ -98,11 +97,11 @@ th, td {
   border: 1px solid #006064;
   margin: 2px;
 }
+
 .claim-box.claimed {
   background-color: green;
 }
 
-/* Print styles for the print preview */
 @media print {
   body * {
     visibility: hidden;
@@ -110,7 +109,7 @@ th, td {
   #print-area, #print-area * {
     visibility: visible;
   }
-  #print-area { 
+  #print-area {
     position: absolute;
     left: 0;
     top: 0;

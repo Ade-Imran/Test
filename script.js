@@ -1,12 +1,83 @@
+// --- RemoteStorage Initialization & Sync Setup ---
+const remoteStorage = new RemoteStorage({ logging: true });
+
+// Claim folders for settings, codes, and UI flags
+remoteStorage.access.claim('qr-configs',     'rw');
+remoteStorage.access.claim('qr-codes',       'rw');
+remoteStorage.access.claim('settings/qrGen', 'rw');
+
+// Enable two-way caching (auto‑sync)
+remoteStorage.caching.enable('/qr-configs/');
+remoteStorage.caching.enable('/qr-codes/');
+remoteStorage.caching.enable('/settings/qrGen/');
+
+// Attach the connect widget into the placeholder div in your HTML
+RemoteStorageWidget.attach(remoteStorage, 'remotestorage-connect-widget');
+
+// In‑memory mirrors of remote data
+let qrConfigs        = {};   // mirrors all docs under /qr-configs/
+let generatedQRCodes = [];   // mirrors all docs under /qr-codes/
+let qrGenEnabled     = true; // mirrors /settings/qrGen/qrGenEnabled
+
+// When RemoteStorage is ready, load existing data
+remoteStorage.on('ready', () => {
+  // Load admin settings
+  remoteStorage.store.getAll('qr-configs/').then(objs => {
+    qrConfigs = objs || {};
+    updateQRGenButton();
+  });
+  // Load generated QR codes
+  remoteStorage.store.getAll('qr-codes/').then(objs => {
+    generatedQRCodes = Object.values(objs || {});
+    showStatistics();
+  });
+  // Load QR‑gen toggle
+  remoteStorage.store.getItem('settings/qrGen/qrGenEnabled')
+    .then(val => {
+      if (val !== null) qrGenEnabled = (val === 'true');
+      updateQRGenButton();
+    });
+});
+
+// React to remote changes and update UI in real time
+remoteStorage.store.on('change', evt => {
+  if (evt.origin !== 'remote') return;
+
+  // Admin settings changed
+  if (evt.path.startsWith('qr-configs/')) {
+    const cat = evt.path.split('/')[1];
+    if (evt.newValue) qrConfigs[cat] = evt.newValue;
+    else delete qrConfigs[cat];
+    if (selectedAdminCategory === cat) {
+      const cfg = qrConfigs[cat] || {};
+      document.getElementById('start-time').value = cfg.start || '';
+      document.getElementById('end-time').value   = cfg.end   || '';
+      document.getElementById('max-claims').value = cfg.maxClaims || 1;
+    }
+    updateQRGenButton();
+  }
+  // Generated QR codes changed
+  else if (evt.path.startsWith('qr-codes/')) {
+    remoteStorage.store.getAll('qr-codes/').then(objs => {
+      generatedQRCodes = Object.values(objs || {});
+      showStatistics();
+    });
+  }
+  // QR‑gen toggle changed
+  else if (evt.path === 'settings/qrGen/qrGenEnabled') {
+    qrGenEnabled = (evt.newValue === 'true');
+    updateQRGenButton();
+  }
+});
+
+
+
 // --- Global Constants & Variables ---
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "admin123";
 
 // Flag to indicate if admin is logged in.
 let isAdmin = false;
-
-// Admin only configures timeline and maximum claims.
-let qrConfigs = JSON.parse(localStorage.getItem("qrConfigs")) || {};
 
 // We now store claim count with each generated QR code (via a "claims" property)
 let currentQRCode = null;
@@ -17,9 +88,6 @@ let html5QrcodeScanner = null;
 // scanContext: for user scanning it will be the category (e.g. "male-atfal", "female-nasirat", "guest")
 let scanContext = null;
 let selectedAdminCategory = null;
-
-// Global flag for QR Code Generation availability (default enabled)
-let qrGenEnabled = localStorage.getItem("qrGenEnabled") === "false" ? false : true;
 
 // Navigation history stack for effective back navigation
 let navigationHistory = [];
@@ -149,9 +217,12 @@ function setAdminCategory(category) {
 // --- Admin Global Control for QR Code Generation ---
 function toggleQRGeneration() {
   qrGenEnabled = !qrGenEnabled;
-  localStorage.setItem("qrGenEnabled", qrGenEnabled);
-  updateQRGenButton();
-  alert("QR Code Generation is now " + (qrGenEnabled ? "Enabled" : "Disabled") + ".");
+  remoteStorage.store.put('settings/qrGen/qrGenEnabled', String(qrGenEnabled))
+    .then(() => {
+      updateQRGenButton();
+      alert("QR Code Generation is now " + (qrGenEnabled ? "Enabled" : "Disabled") + ".");
+    })
+    .catch(console.error);
 }
 
 // --- Admin Settings: Save & Delete ---
@@ -160,26 +231,17 @@ function saveSettings() {
     alert("Please select a category first.");
     return;
   }
-  const start = document.getElementById("start-time").value;
-  const end = document.getElementById("end-time").value;
+  const start     = document.getElementById("start-time").value;
+  const end       = document.getElementById("end-time").value;
   const maxClaims = parseInt(document.getElementById("max-claims").value, 10);
   if (!start || !end || isNaN(maxClaims)) {
     alert("Please fill in all fields correctly.");
     return;
   }
-  qrConfigs[selectedAdminCategory] = { start, end, maxClaims };
-  localStorage.setItem("qrConfigs", JSON.stringify(qrConfigs));
-  
-  let codes = JSON.parse(localStorage.getItem("generatedQRCodes")) || [];
-  codes = codes.map(entry => {
-    if (entry.category === selectedAdminCategory) {
-      entry.claims = 0;
-    }
-    return entry;
-  });
-  localStorage.setItem("generatedQRCodes", JSON.stringify(codes));
-  
-  alert("Settings saved for " + selectedAdminCategory + ". Claim data cleared for fresh interval.");
+  const path = `qr-configs/${selectedAdminCategory}`;
+  remoteStorage.store.put(path, { start, end, maxClaims })
+    .then(() => alert("Settings saved for " + selectedAdminCategory))
+    .catch(console.error);
 }
 
 function deleteSettings() {
@@ -187,9 +249,10 @@ function deleteSettings() {
     alert("Please select a category first.");
     return;
   }
-  delete qrConfigs[selectedAdminCategory];
-  localStorage.setItem("qrConfigs", JSON.stringify(qrConfigs));
-  alert("Settings deleted for " + selectedAdminCategory);
+  const path = `qr-configs/${selectedAdminCategory}`;
+  remoteStorage.store.remove(path)
+    .then(() => alert("Settings deleted for " + selectedAdminCategory))
+    .catch(console.error);
 }
 
 // --- User Scanning Functions ---
@@ -246,14 +309,13 @@ function stopScanner() {
 function validateQRCode(scannedCode) {
   try {
     const data = JSON.parse(scannedCode);
-    let codes = JSON.parse(localStorage.getItem("generatedQRCodes")) || [];
-    const match = codes.find(entry => {
-      return entry.membership === data.membership &&
-             entry.name === data.name &&
-             entry.category === data.category &&
-             entry.validFrom === data.validFrom &&
-             entry.validTo === data.validTo;
-    });
+    const match = generatedQRCodes.find(entry =>
+      entry.membership === data.membership &&
+      entry.name === data.name &&
+      entry.category === data.category &&
+      entry.validFrom === data.validFrom &&
+      entry.validTo === data.validTo
+    );
     if (!match) {
       document.getElementById("qr-reader-results").innerText = "❌ Invalid QR Code!";
       handleInvalidScan("Invalid QR Code. Please scan a valid one.");
@@ -294,9 +356,9 @@ function validateQRCode(scannedCode) {
     }
     currentQRCode = match;
     document.getElementById("qr-reader-results").innerHTML =
-      "<strong>Name:</strong> " + match.name +
-      " | <strong>Membership:</strong> " + match.membership +
-      " | <strong>Claims:</strong> " + match.claims + "/" + config.maxClaims;
+      `<strong>Name:</strong> ${match.name} |
+       <strong>Membership:</strong> ${match.membership} |
+       <strong>Claims:</strong> ${match.claims}/${config.maxClaims}`;
     showElement("claim-btn");
   } catch (e) {
     console.error("Error parsing QR code data", e);
@@ -307,53 +369,48 @@ function validateQRCode(scannedCode) {
 
 function claimFood() {
   if (!currentQRCode) return;
-  let codes = JSON.parse(localStorage.getItem("generatedQRCodes")) || [];
-  let index = codes.findIndex(entry =>
+  const idx = generatedQRCodes.findIndex(entry =>
     entry.membership === currentQRCode.membership &&
     entry.name === currentQRCode.name &&
     entry.category === currentQRCode.category &&
     entry.validFrom === currentQRCode.validFrom &&
     entry.validTo === currentQRCode.validTo
   );
-  if (index !== -1) {
-    const config = qrConfigs[currentQRCode.category];
-    if (!config) {
-      document.getElementById("qr-reader-results").innerText = "Food not available!";
-      return;
-    }
-    let now = new Date();
-    let startTime = new Date(config.start);
-    let endTime = new Date(config.end);
-    if (now < startTime || now > endTime) {
-      document.getElementById("qr-reader-results").innerText = "No food available!";
-      handleInvalidScan("No food available");
-      return;
-    }
-    if (codes[index].claims >= parseInt(config.maxClaims, 10)) {
-      document.getElementById("qr-reader-results").innerText = "You have already claimed your meal!";
-      hideElement("claim-btn");
-      return;
-    }
-    codes[index].claims += 1;
-    localStorage.setItem("generatedQRCodes", JSON.stringify(codes));
-    currentQRCode = codes[index];
-    document.getElementById("qr-reader-results").innerHTML =
-      "<strong>Name:</strong> " + currentQRCode.name +
-      " | <strong>Membership:</strong> " + currentQRCode.membership +
-      " | <strong>Claims:</strong> " + currentQRCode.claims + "/" + config.maxClaims;
+  if (idx === -1) return;
+
+  const config = qrConfigs[currentQRCode.category];
+  const now = new Date();
+  const startTime = new Date(config.start);
+  const endTime = new Date(config.end);
+  if (!config || now < startTime || now > endTime || generatedQRCodes[idx].claims >= parseInt(config.maxClaims,10)) {
+    document.getElementById("qr-reader-results").innerText = "No food available or already claimed!";
     hideElement("claim-btn");
+    return;
   }
+
+  generatedQRCodes[idx].claims++;
+  currentQRCode = generatedQRCodes[idx];
+
+  remoteStorage.store.update(`qr-codes/${currentQRCode.membership}`, currentQRCode)
+    .then(() => {
+      document.getElementById("qr-reader-results").innerHTML =
+        `<strong>Name:</strong> ${currentQRCode.name} |
+         <strong>Membership:</strong> ${currentQRCode.membership} |
+         <strong>Claims:</strong> ${currentQRCode.claims}/${config.maxClaims}`;
+      hideElement("claim-btn");
+    })
+    .catch(console.error);
 }
 
 // --- QR Code Generation Functionality ---
-// Modified duplicate check: allow registration unless a valid (unexpired) QR code already exists for the membership number.
 function generateQRCode() {
   document.getElementById("qr-output").innerHTML = "";
   const membership = document.getElementById("membership-number").value.trim();
-  const name = document.getElementById("member-name").value.trim();
-  const category = document.getElementById("member-category").value;
-  const validFrom = document.getElementById("valid-from").value;
-  const validTo = document.getElementById("valid-to").value;
+  const name       = document.getElementById("member-name").value.trim();
+  const category   = document.getElementById("member-category").value;
+  const validFrom  = document.getElementById("valid-from").value;
+  const validTo    = document.getElementById("valid-to").value;
+
   if (!membership || !name || !validFrom || !validTo) {
     alert("Please fill in all fields.");
     return;
@@ -362,33 +419,26 @@ function generateQRCode() {
     alert("Valid From must be earlier than Valid To.");
     return;
   }
-  let codes = JSON.parse(localStorage.getItem("generatedQRCodes")) || [];
+
   const now = new Date();
-  // Only consider duplicates that are still valid (unexpired)
-  const duplicate = codes.find(entry => entry.membership === membership && new Date(entry.validTo) > now);
-  if (duplicate) {
-    alert("A QR Code with this membership number already exists. Please use a different membership number.");
+  if (generatedQRCodes.find(e => e.membership===membership && new Date(e.validTo)>now)) {
+    alert("A valid QR Code for this membership already exists.");
     return;
   }
+
   const data = { membership, name, category, validFrom, validTo, claims: 0 };
   new QRCode(document.getElementById("qr-output"), {
-    text: JSON.stringify(data),
-    width: 128,
-    height: 128,
-    colorDark: "#000000",
-    colorLight: "#ffffff"
+    text: JSON.stringify(data), width:128, height:128
   });
-  saveGeneratedQRCode(data);
   lastGeneratedQRCodeData = data;
-  alert("QR Code generated!");
-  showElement("print-btn");
-  showStatistics();
-}
 
-function saveGeneratedQRCode(data) {
-  let codes = JSON.parse(localStorage.getItem("generatedQRCodes")) || [];
-  codes.push(data);
-  localStorage.setItem("generatedQRCodes", JSON.stringify(codes));
+  remoteStorage.store.put(`qr-codes/${data.membership}`, data)
+    .then(() => {
+      alert("QR Code generated and synced!");
+      showElement("print-btn");
+      showStatistics();
+    })
+    .catch(console.error);
 }
 
 // --- Print Functionality ---
@@ -426,9 +476,7 @@ function printQRCode() {
           </div>
           ${qrOutputContent}
         </div>
-        <script>
-          window.print();
-        <\/script>
+        <script>window.print();</script>
       </body>
     </html>
   `);
@@ -437,39 +485,29 @@ function printQRCode() {
 
 // --- Statistics Functionality (Admin Only) ---
 function showStatistics() {
-  let codes = JSON.parse(localStorage.getItem("generatedQRCodes")) || [];
   const now = new Date();
-  // Remove expired codes.
-  let validCodes = codes.filter(entry => new Date(entry.validTo) > now);
-  if (codes.length !== validCodes.length) {
-    localStorage.setItem("generatedQRCodes", JSON.stringify(validCodes));
-  }
-  
-  let totalRegistered = validCodes.length;
-  let totalClaimed = validCodes.filter(entry => entry.claims > 0).length;
-  
+  const validCodes = generatedQRCodes.filter(e => new Date(e.validTo) > now);
+
+  const totalRegistered = validCodes.length;
+  const totalClaimed    = validCodes.filter(e => e.claims>0).length;
   document.getElementById("stats-summary").innerHTML =
-    "<strong>Total Registered:</strong> " + totalRegistered +
-    " | <strong>Total Claimed:</strong> " + totalClaimed;
-  
-  let categoryData = {};
-  validCodes.forEach(entry => {
-    if (!categoryData[entry.category]) {
-      categoryData[entry.category] = { registered: 0, claimed: 0 };
-    }
-    categoryData[entry.category].registered++;
-    if (entry.claims > 0) {
-      categoryData[entry.category].claimed++;
-    }
+    `<strong>Total Registered:</strong> ${totalRegistered} |
+     <strong>Total Claimed:</strong> ${totalClaimed}`;
+
+  const categoryData = {};
+  validCodes.forEach(e => {
+    if (!categoryData[e.category]) categoryData[e.category] = { registered:0, claimed:0 };
+    categoryData[e.category].registered++;
+    if (e.claims>0) categoryData[e.category].claimed++;
   });
-  
-  const labels = Object.keys(categoryData);
-  const registeredData = labels.map(cat => categoryData[cat].registered);
-  const claimedData = labels.map(cat => categoryData[cat].claimed);
-  
+
+  const labels        = Object.keys(categoryData);
+  const registeredData= labels.map(cat => categoryData[cat].registered);
+  const claimedData   = labels.map(cat => categoryData[cat].claimed);
+
   const ctx = document.getElementById("chart-canvas").getContext("2d");
   if (chartInstance) {
-    chartInstance.data.labels = labels;
+    chartInstance.data.labels           = labels;
     chartInstance.data.datasets[0].data = registeredData;
     chartInstance.data.datasets[1].data = claimedData;
     chartInstance.update();
@@ -477,80 +515,52 @@ function showStatistics() {
     chartInstance = new Chart(ctx, {
       type: "bar",
       data: {
-        labels: labels,
+        labels,
         datasets: [
-          {
-            label: "Registered",
-            data: registeredData,
-            backgroundColor: "rgba(54, 162, 235, 0.6)"
-          },
-          {
-            label: "Claimed",
-            data: claimedData,
-            backgroundColor: "rgba(75, 192, 192, 0.6)"
-          }
+          { label:"Registered", data:registeredData },
+          { label:"Claimed",    data:claimedData    }
         ]
       },
       options: {
-        scales: {
-          y: {
-            beginAtZero: true,
-            precision: 0
-          }
-        },
-        plugins: {
-          legend: { display: true }
-        }
+        scales: { y:{ beginAtZero:true, precision:0 } },
+        plugins:{ legend:{ display:true } }
       }
     });
   }
-  
-  const tbody = document.getElementById("stats-table").getElementsByTagName("tbody")[0];
+
+  const tbody = document.getElementById("stats-table").querySelector("tbody");
   tbody.innerHTML = "";
   validCodes.forEach(entry => {
     const row = document.createElement("tr");
-    const cellName = document.createElement("td");
-    cellName.textContent = entry.name;
-    const cellMembership = document.createElement("td");
-    cellMembership.textContent = entry.membership;
-    const cellCategory = document.createElement("td");
-    cellCategory.textContent = entry.category;
-    const cellClaim = document.createElement("td");
-    const cellAction = document.createElement("td");
-    
-    const config = qrConfigs[entry.category];
-    if (config) {
-      let startTime = config.start ? new Date(config.start) : null;
-      let endTime = config.end ? new Date(config.end) : null;
-      if (startTime && endTime && now >= startTime && now <= endTime) {
-        let boxesHtml = "";
-        const maxClaims = parseInt(config.maxClaims, 10);
-        const currentClaims = entry.claims ? entry.claims : 0;
-        for (let i = 0; i < maxClaims; i++) {
-          boxesHtml += i < currentClaims
-            ? "<span class='claim-box claimed'></span>"
-            : "<span class='claim-box'></span>";
-        }
-        cellClaim.innerHTML = boxesHtml;
-      } else {
-        cellClaim.textContent = "No food available";
+    ["name","membership","category"].forEach(prop => {
+      const td = document.createElement("td");
+      td.textContent = entry[prop];
+      row.appendChild(td);
+    });
+    // claim boxes cell
+    const claimCell = document.createElement("td");
+    const cfg = qrConfigs[entry.category];
+    if (cfg && now>=new Date(cfg.start) && now<=new Date(cfg.end)) {
+      for (let i=0; i<cfg.maxClaims; i++) {
+        const span = document.createElement("span");
+        span.className = "claim-box" + (i<entry.claims ? " claimed" : "");
+        claimCell.appendChild(span);
       }
     } else {
-      cellClaim.textContent = "No food available";
+      claimCell.textContent = "No food available";
     }
-    
+    row.appendChild(claimCell);
+    // action cell
+    const actionCell = document.createElement("td");
     const delBtn = document.createElement("button");
     delBtn.innerText = "Delete";
-    delBtn.onclick = function() {
-      deleteQRCode(entry.membership);
+    delBtn.onclick = () => {
+      remoteStorage.store.remove(`qr-codes/${entry.membership}`)
+        .catch(console.error);
     };
-    cellAction.appendChild(delBtn);
-    
-    row.appendChild(cellName);
-    row.appendChild(cellMembership);
-    row.appendChild(cellCategory);
-    row.appendChild(cellClaim);
-    row.appendChild(cellAction);
+    actionCell.appendChild(delBtn);
+    row.appendChild(actionCell);
+
     tbody.appendChild(row);
   });
 }
@@ -558,15 +568,11 @@ function showStatistics() {
 // --- Search Functionality for Statistics ---
 function filterStatsTable() {
   const searchValue = document.getElementById("stats-search").value.toLowerCase();
-  const tbody = document.getElementById("stats-table").getElementsByTagName("tbody")[0];
-  Array.from(tbody.getElementsByTagName("tr")).forEach(row => {
-    const nameText = row.cells[0].textContent.toLowerCase();
+  document.querySelectorAll("#stats-table tbody tr").forEach(row => {
+    const nameText       = row.cells[0].textContent.toLowerCase();
     const membershipText = row.cells[1].textContent.toLowerCase();
-    if (nameText.includes(searchValue) || membershipText.includes(searchValue)) {
-      row.style.display = "";
-    } else {
-      row.style.display = "none";
-    }
+    row.style.display = (nameText.includes(searchValue) || membershipText.includes(searchValue))
+      ? "" : "none";
   });
 }
 

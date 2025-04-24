@@ -1,20 +1,14 @@
-
-// --- Firestore Helper Functions ---
+// --- Session‑scoped localStorage helper ---
 const BROWSER_ID = navigator.userAgent;
-
-async function lsKey(key) {
+function lsKey(key) {
   return `${BROWSER_ID}::${key}`;
 }
-
-async function lsGet(key, fallback) {
-  const docRef = db.collection('localStorage').doc(await lsKey(key));
-  const doc = await docRef.get();
-  return doc.exists ? doc.data().value : fallback;
+function lsGet(key, fallback) {
+  const v = localStorage.getItem(lsKey(key));
+  return v !== null ? JSON.parse(v) : fallback;
 }
-
-async function lsSet(key, value) {
-  const docRef = db.collection('localStorage').doc(await lsKey(key));
-  await docRef.set({ value });
+function lsSet(key, value) {
+  localStorage.setItem(lsKey(key), JSON.stringify(value));
 }
 
 // --- Global Constants & Variables ---
@@ -23,14 +17,14 @@ const ADMIN_PASSWORD = "admin123";
 let isAdmin = false;
 
 // Now session‑scoped
-let qrConfigs = await lsGet("qrConfigs", {});
+let qrConfigs = lsGet("qrConfigs", {});
 let currentQRCode = null;
 let html5QrcodeScanner = null;
 let scanContext = null;
 let selectedAdminCategory = null;
 
 // session‑scoped flag
-let qrGenEnabled = await lsGet("qrGenEnabled", true);
+let qrGenEnabled = lsGet("qrGenEnabled", true);
 
 let navigationHistory = [];
 let lastGeneratedQRCodeData = null;
@@ -75,7 +69,7 @@ function updateQRGenButton() {
 }
 
 // --- Admin Login Functions ---
-async function adminLogin() {
+function adminLogin() {
   const u = document.getElementById("admin-username").value;
   const p = document.getElementById("admin-password").value;
   if (u === ADMIN_USERNAME && p === ADMIN_PASSWORD) {
@@ -89,7 +83,7 @@ async function adminLogin() {
     document.getElementById("admin-password").value = "";
   }
 }
-async function logoutAdmin() {
+function logoutAdmin() {
   isAdmin = false;
   document.getElementById("admin-username").value = "";
   document.getElementById("admin-password").value = "";
@@ -101,7 +95,7 @@ function selectAdminCategory(type) {
   hideElement("admin-dashboard");
   navigateTo(type === "male" ? "admin-male-subcategories" : "admin-female-subcategories");
 }
-async function setAdminCategory(category) {
+function setAdminCategory(category) {
   selectedAdminCategory = category;
   navigationHistory = [];
   navigateTo("admin-settings-form");
@@ -113,15 +107,15 @@ async function setAdminCategory(category) {
 }
 
 // --- Admin Global Control for QR Generation ---
-async function toggleQRGeneration() {
+function toggleQRGeneration() {
   qrGenEnabled = !qrGenEnabled;
-  await lsSet("qrGenEnabled", qrGenEnabled);
+  lsSet("qrGenEnabled", qrGenEnabled);
   updateQRGenButton();
   alert("QR Code Generation is now " + (qrGenEnabled ? "Enabled" : "Disabled") + ".");
 }
 
 // --- Admin Settings: Save & Delete ---
-async function saveSettings() {
+function saveSettings() {
   if (!selectedAdminCategory) {
     alert("Please select a category first.");
     return;
@@ -134,31 +128,31 @@ async function saveSettings() {
     return;
   }
   qrConfigs[selectedAdminCategory] = { start, end, maxClaims: maxC };
-  await lsSet("qrConfigs", qrConfigs);
+  lsSet("qrConfigs", qrConfigs);
 
   // reset claims for that category
-  let codes = await lsGet("generatedQRCodes", []);
+  let codes = lsGet("generatedQRCodes", []);
   codes = codes.map(e => {
     if (e.category === selectedAdminCategory) e.claims = 0;
     return e;
   });
-  await lsSet("generatedQRCodes", codes);
+  lsSet("generatedQRCodes", codes);
 
   alert("Settings saved for " + selectedAdminCategory + ". Claim data cleared for fresh interval.");
 }
 
-async function deleteSettings() {
+function deleteSettings() {
   if (!selectedAdminCategory) {
     alert("Please select a category first.");
     return;
   }
   delete qrConfigs[selectedAdminCategory];
-  await lsSet("qrConfigs", qrConfigs);
+  lsSet("qrConfigs", qrConfigs);
   alert("Settings deleted for " + selectedAdminCategory);
 }
 
 // --- User Scanning Functions ---
-async function startUserScannerForCategory(cat) {
+function startUserScannerForCategory(cat) {
   scanContext = cat;
   navigationHistory = [];
   navigateTo("scanner");
@@ -167,7 +161,7 @@ async function startUserScannerForCategory(cat) {
   hideElement("claim-btn");
   startScanner();
 }
-async function startUserScanner(userType) {
+function startUserScanner(userType) {
   scanContext = userType;
   navigationHistory = [];
   navigateTo("scanner");
@@ -177,92 +171,75 @@ async function startUserScanner(userType) {
   startScanner();
 }
 
-// --- Scanning via html5-qrcode ---
+// --- Scanning via html5‑qrcode ---
 function startScanner() {
   document.getElementById("qr-reader-results").innerText = "";
   html5QrcodeScanner = new Html5QrcodeScanner("qr-reader", { fps:10, qrbox:250 }, false);
   html5QrcodeScanner.render(onScanSuccess, onScanError);
 }
-
 function onScanSuccess(decodedText) {
   html5QrcodeScanner.clear().catch(console.error);
   validateQRCode(decodedText);
 }
-
-function onScanError(err) { 
-  console.warn("QR scan error:", err); 
-}
-
+function onScanError(err) { console.warn("QR scan error:", err); }
 function stopScanner() {
   html5QrcodeScanner?.clear().catch(console.error);
   backToDashboard();
 }
 
 // --- Validation & Claiming ---
-async function validateQRCode(scannedCode) {
+function validateQRCode(scannedCode) {
   try {
     const data = JSON.parse(scannedCode);
-
-    // Query Firestore to find a matching QR code document
-    const q = query(collection(db, "generatedQRCodes"), 
-                    where("membership", "==", data.membership),
-                    where("name", "==", data.name),
-                    where("category", "==", data.category),
-                    where("validFrom", "==", data.validFrom),
-                    where("validTo", "==", data.validTo));
-    
-    const querySnapshot = await getDocs(q);
-    if (querySnapshot.empty) {
+    let codes = lsGet("generatedQRCodes", []);
+    const match = codes.find(e =>
+      e.membership===data.membership &&
+      e.name===data.name &&
+      e.category===data.category &&
+      e.validFrom===data.validFrom &&
+      e.validTo===data.validTo
+    );
+    if (!match) {
       document.getElementById("qr-reader-results").innerText = "❌ Invalid QR Code!";
       handleInvalidScan("Invalid QR Code. Please scan a valid one.");
       return;
     }
-
-    const match = querySnapshot.docs[0].data();
     const now = new Date();
-
-    if (now < new Date(match.validFrom)) {
+    if (now < new Date(data.validFrom)) {
       document.getElementById("qr-reader-results").innerText = "⏳ Not yet valid!";
       handleInvalidScan("Invalid QR Code. Please scan a valid one.");
       return;
     }
-
-    if (now > new Date(match.validTo)) {
+    if (now > new Date(data.validTo)) {
       document.getElementById("qr-reader-results").innerText = "❌ Expired!";
       handleInvalidScan("Invalid QR Code. Please scan a valid one.");
       return;
     }
-
-    if (scanContext !== match.category) {
+    if (scanContext !== data.category) {
       document.getElementById("qr-reader-results").innerText = "Invalid category.";
       handleInvalidScan("Go collect your food at your respective category.");
       return;
     }
-
-    const cfg = qrConfigs[match.category];
+    const cfg = qrConfigs[data.category];
     if (!cfg) {
       document.getElementById("qr-reader-results").innerText = "Food not available!";
       handleInvalidScan("Invalid QR Code. Please scan a valid one.");
       return;
     }
-
     if (now < new Date(cfg.start) || now > new Date(cfg.end)) {
       document.getElementById("qr-reader-results").innerText = "No food available!";
       handleInvalidScan("No food available");
       return;
     }
-
     if (match.claims >= cfg.maxClaims) {
       document.getElementById("qr-reader-results").innerText = "Already claimed!";
       handleInvalidScan("You have already claimed your meal!");
       return;
     }
-
     currentQRCode = match;
-    document.getElementById("qr-reader-results").innerHTML = 
+    document.getElementById("qr-reader-results").innerHTML =
       `<strong>Name:</strong> ${match.name} | <strong>Membership:</strong> ${match.membership} | <strong>Claims:</strong> ${match.claims}/${cfg.maxClaims}`;
     showElement("claim-btn");
-
   } catch (e) {
     console.error(e);
     document.getElementById("qr-reader-results").innerText = "❌ Invalid QR Code!";
@@ -270,115 +247,121 @@ async function validateQRCode(scannedCode) {
   }
 }
 
-async function claimFood() {
+function claimFood() {
   if (!currentQRCode) return;
-
-  // Query Firestore to find the QR code document
-  const q = query(collection(db, "generatedQRCodes"), 
-                  where("membership", "==", currentQRCode.membership),
-                  where("name", "==", currentQRCode.name),
-                  where("category", "==", currentQRCode.category),
-                  where("validFrom", "==", currentQRCode.validFrom),
-                  where("validTo", "==", currentQRCode.validTo));
-
-  const querySnapshot = await getDocs(q);
-  if (querySnapshot.empty) return;
-
-  const qrCodeDoc = querySnapshot.docs[0];
-  const qrCodeData = qrCodeDoc.data();
+  let codes = lsGet("generatedQRCodes", []);
+  const idx = codes.findIndex(e =>
+    e.membership===currentQRCode.membership &&
+    e.name===currentQRCode.name &&
+    e.category===currentQRCode.category &&
+    e.validFrom===currentQRCode.validFrom &&
+    e.validTo===currentQRCode.validTo
+  );
+  if (idx===-1) return;
   const cfg = qrConfigs[currentQRCode.category];
   const now = new Date();
-
   if (now < new Date(cfg.start) || now > new Date(cfg.end)) {
     document.getElementById("qr-reader-results").innerText = "No food available!";
     handleInvalidScan("No food available");
     return;
   }
-
-  if (qrCodeData.claims >= cfg.maxClaims) {
+  if (codes[idx].claims >= cfg.maxClaims) {
     document.getElementById("qr-reader-results").innerText = "Already claimed!";
     hideElement("claim-btn");
     return;
   }
-
-  // Increment claims and update Firestore
-  await updateDoc(qrCodeDoc.ref, {
-    claims: qrCodeData.claims + 1
-  });
-
-  currentQRCode.claims++;
+  codes[idx].claims++;
+  lsSet("generatedQRCodes", codes);
+  currentQRCode = codes[idx];
   document.getElementById("qr-reader-results").innerHTML =
     `<strong>Name:</strong> ${currentQRCode.name} | <strong>Membership:</strong> ${currentQRCode.membership} | <strong>Claims:</strong> ${currentQRCode.claims}/${cfg.maxClaims}`;
   hideElement("claim-btn");
 }
 
 // --- QR Code Generation ---
-async function generateQRCode() {
+function generateQRCode() {
   document.getElementById("qr-output").innerHTML = "";
-
   const membership = document.getElementById("membership-number").value.trim();
   const name       = document.getElementById("member-name").value.trim();
   const category   = document.getElementById("member-category").value;
   const validFrom  = document.getElementById("valid-from").value;
   const validTo    = document.getElementById("valid-to").value;
-
-  if (!membership || !name || !validFrom || !validTo) {
+  if (!membership||!name||!validFrom||!validTo) {
     alert("Please fill in all fields."); return;
   }
-
-  if (new Date(validFrom) >= new Date(validTo)) {
+  if (new Date(validFrom)>=new Date(validTo)) {
     alert("Valid From must be earlier than Valid To."); return;
   }
-
-  // Check for duplicates in Firestore
-  const q = query(collection(db, "generatedQRCodes"), 
-                  where("membership", "==", membership), 
-                  where("validTo", ">", new Date()));
-
-  const querySnapshot = await getDocs(q);
-  if (!querySnapshot.empty) {
+  let codes = lsGet("generatedQRCodes", []);
+  const now = new Date();
+  const dup = codes.find(e=>e.membership===membership && new Date(e.validTo)>now);
+  if (dup) {
     alert("A QR Code with this membership number already exists."); return;
   }
-
-  const data = { membership, name, category, validFrom, validTo, claims: 0 };
-  
-  // Generate QR Code and display
+  const data = { membership, name, category, validFrom, validTo, claims:0 };
   new QRCode(document.getElementById("qr-output"), {
-    text: JSON.stringify(data),
-    width: 128,
-    height: 128,
-    colorDark: "#000000",
-    colorLight: "#ffffff"
+    text: JSON.stringify(data), width:128, height:128,
+    colorDark:"#000000", colorLight:"#ffffff"
   });
-
-  // Save QR code data to Firestore
-  await addDoc(collection(db, "generatedQRCodes"), data);
-
+  codes.push(data);
+  lsSet("generatedQRCodes", codes);
   lastGeneratedQRCodeData = data;
   alert("QR Code generated!");
   showElement("print-btn");
   showStatistics();
 }
 
-// --- Statistics Display ---
-async function showStatistics() {
-  const q = query(collection(db, "generatedQRCodes"), where("validTo", ">", new Date()));
-  const querySnapshot = await getDocs(q);
-  
-  const validCodes = querySnapshot.docs.map(doc => doc.data());
+// --- Print ---
+function printQRCode() {
+  if (!lastGeneratedQRCodeData) {
+    alert("No QR Code data available for printing."); return;
+  }
+  const qrOutputContent = document.getElementById("qr-output").outerHTML;
+  const w = window.open("", "PrintWindow", "width=600,height=600");
+  w.document.write(`
+    <html><head><title>Print QR Code</title><style>
+      body{font-family:Arial;margin:20px;}
+      .print-container{text-align:center;}
+      .print-container h2,.print-container p{font-weight:bold;}
+      .details{margin-bottom:20px;}
+      .details p{margin:5px 0;}
+      @media print{body *{visibility:hidden}.print-container,*{visibility:visible}.print-container{position:absolute;top:0;left:0;width:100%;}}
+    </style></head><body>
+      <div class="print-container" id="print-area">
+        <h2>${lastGeneratedQRCodeData.name}</h2>
+        <div class="details">
+          <p>Membership Number: ${lastGeneratedQRCodeData.membership}</p>
+          <p>Valid From: ${lastGeneratedQRCodeData.validFrom}</p>
+          <p>Valid To: ${lastGeneratedQRCodeData.validTo}</p>
+        </div>
+        ${qrOutputContent}
+      </div>
+      <script>window.print();<\/script>
+    </body></html>
+  `);
+  w.document.close();
+}
+
+// --- Statistics ---
+function showStatistics() {
+  let codes = lsGet("generatedQRCodes", []);
+  const now = new Date();
+  const validCodes = codes.filter(e=>new Date(e.validTo)>now);
+  if (codes.length!==validCodes.length) lsSet("generatedQRCodes", validCodes);
+
   document.getElementById("stats-summary").innerHTML =
-    `<strong>Total Registered:</strong> ${validCodes.length} | <strong>Total Claimed:</strong> ${validCodes.filter(e => e.claims > 0).length}`;
+    `<strong>Total Registered:</strong> ${validCodes.length} | <strong>Total Claimed:</strong> ${validCodes.filter(e=>e.claims>0).length}`;
 
   const categoryData = {};
-  validCodes.forEach(e => {
-    if (!categoryData[e.category]) categoryData[e.category] = { registered: 0, claimed: 0 };
+  validCodes.forEach(e=>{
+    if (!categoryData[e.category]) categoryData[e.category] = {registered:0,claimed:0};
     categoryData[e.category].registered++;
-    if (e.claims > 0) categoryData[e.category].claimed++;
+    if (e.claims>0) categoryData[e.category].claimed++;
   });
 
   const labels = Object.keys(categoryData);
-  const registeredData = labels.map(l => categoryData[l].registered);
-  const claimedData = labels.map(l => categoryData[l].claimed);
+  const registeredData = labels.map(l=>categoryData[l].registered);
+  const claimedData    = labels.map(l=>categoryData[l].claimed);
 
   const ctx = document.getElementById("chart-canvas").getContext("2d");
   if (chartInstance) {
@@ -388,30 +371,28 @@ async function showStatistics() {
     chartInstance.update();
   } else {
     chartInstance = new Chart(ctx, {
-      type: "bar",
-      data: { labels, datasets: [
-        { label: "Registered", data: registeredData },
-        { label: "Claimed", data: claimedData }
+      type:"bar",
+      data:{labels, datasets:[
+        {label:"Registered", data:registeredData},
+        {label:"Claimed", data:claimedData}
       ]},
-      options: { scales: { y: { beginAtZero: true, precision: 0 } }, plugins: { legend: { display: true } } }
+      options:{scales:{y:{beginAtZero:true, precision:0}}, plugins:{legend:{display:true}}}
     });
   }
 
   const tbody = document.getElementById("stats-table").querySelector("tbody");
   tbody.innerHTML = "";
-  validCodes.forEach(e => {
+  validCodes.forEach(e=>{
     const row = document.createElement("tr");
-    ["name", "membership", "category"].forEach(f => {
-      const td = document.createElement("td");
-      td.textContent = e[f]; row.appendChild(td);
+    ["name","membership","category"].forEach(f=>{
+      const td = document.createElement("td"); td.textContent = e[f]; row.appendChild(td);
     });
-
     const cfg = qrConfigs[e.category];
     const tdClaim = document.createElement("td");
-    if (cfg && new Date() >= new Date(cfg.start) && new Date() <= new Date(cfg.end)) {
-      let html = "";
-      for (let i = 0; i < cfg.maxClaims; i++) {
-        html += i < e.claims ? "<span class='claim-box claimed'></span>" : "<span class='claim-box'></span>";
+    if (cfg && now>=new Date(cfg.start) && now<=new Date(cfg.end)) {
+      let html="";
+      for (let i=0;i<cfg.maxClaims;i++){
+        html += i<e.claims ? "<span class='claim-box claimed'></span>" : "<span class='claim-box'></span>";
       }
       tdClaim.innerHTML = html;
     } else tdClaim.textContent = "No food available";
@@ -420,10 +401,9 @@ async function showStatistics() {
     const tdAction = document.createElement("td");
     const btnDel = document.createElement("button");
     btnDel.innerText = "Delete";
-    btnDel.onclick = async () => { 
-      const all = await getDocs(collection(db, "generatedQRCodes"));
-      const docRef = all.docs.find(doc => doc.data().membership === e.membership).ref;
-      await deleteDoc(docRef);
+    btnDel.onclick = ()=>{ 
+      const all = lsGet("generatedQRCodes", []);
+      lsSet("generatedQRCodes", all.filter(x=>x.membership!==e.membership));
       showStatistics();
     };
     tdAction.appendChild(btnDel);
@@ -436,14 +416,13 @@ async function showStatistics() {
 // --- Search ---
 function filterStatsTable() {
   const v = document.getElementById("stats-search").value.toLowerCase();
-  document.querySelectorAll("#stats-table tbody tr").forEach(row => {
+  document.querySelectorAll("#stats-table tbody tr").forEach(row=>{
     const n = row.cells[0].textContent.toLowerCase();
     const m = row.cells[1].textContent.toLowerCase();
-    row.style.display = (n.includes(v) || m.includes(v)) ? "" : "none";
+    row.style.display = (n.includes(v)||m.includes(v)) ? "" : "none";
   });
 }
 document.getElementById("stats-search").addEventListener("input", filterStatsTable);
 
 // On page load
 updateQRGenButton();
-

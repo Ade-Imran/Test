@@ -1,14 +1,21 @@
-  body {
- font-family: 'Poppins', sans-serif;
+body {
+  font-family: 'Poppins', sans-serif;
   background: linear-gradient(135deg, #e0f7fa, #ffffff);
   margin: 0;
   padding: 20px;
   text-align: center;
 }
 
-
 header h1 {
   color: #006064;
+}
+
+/* Step indicator */
+.step-indicator {
+  font-size: 0.9em;
+  color: #00796b;
+  margin-bottom: 10px;
+  font-weight: 500;
 }
 
 .panel {
@@ -19,15 +26,17 @@ header h1 {
   padding: 20px;
   max-width: 500px;
   box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-   transition: all 0.3s ease-in-out;
+  transition: all 0.3s ease-in-out;
   opacity: 1;
 }
 
+/* Animated hiding */
 .hidden {
   display: none;
   opacity: 0;
   pointer-events: none;
   transform: translateY(10px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
 button {
@@ -47,7 +56,6 @@ button:hover {
   background: linear-gradient(to right, #1de9b6, #00bfa5);
   transform: scale(1.05);
 }
-
 
 input, select {
   padding: 10px;
@@ -87,6 +95,12 @@ input, select {
 
 #qr-output {
   margin-top: 20px;
+  padding: 20px;
+  background: #fafafa;
+  border-radius: 10px;
+  border: 2px dashed #00bfa5;
+  display: inline-block;
+  font-weight: 500;
 }
 
 table {
@@ -111,8 +125,23 @@ th, td {
   border: 1px solid #006064;
   margin: 2px;
 }
+
 .claim-box.claimed {
   background-color: green;
+}
+
+/* Loading Spinner */
+#loading-spinner {
+  margin-top: 10px;
+  font-size: 1.2em;
+  color: #00796b;
+  animation: spin 1s infinite linear;
+  display: none;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); } 
+  100% { transform: rotate(360deg); }
 }
 
 /* Print styles for the print preview */
@@ -127,6 +156,23 @@ th, td {
     position: absolute;
     left: 0;
     top: 0;
+    width: 100%;
+  }
+}
+
+/* Responsive layout */
+@media screen and (max-width: 600px) {
+  .panel {
+    width: 90%;
+    padding: 10px;
+  }
+
+  button {
+    width: 100%;
+    margin: 8px 0;
+  }
+
+  input, select {
     width: 100%;
   }
 }

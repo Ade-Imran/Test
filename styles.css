@@ -19,10 +19,15 @@ header h1 {
   padding: 20px;
   max-width: 500px;
   box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+   transition: all 0.3s ease-in-out;
+  opacity: 1;
 }
 
 .hidden {
   display: none;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
 }
 
 button {
